@@ -127,6 +127,30 @@ def test_failed_harvest_not_cached_and_raises_403(monkeypatch):
     assert DeadHarvester.calls == 1
 
 
+def test_referer_defaults_when_cookie_present(monkeypatch):
+    url = "https://a.gov/deep/x"
+    # default_referer set -> used verbatim
+    sent = install_fake_get(monkeypatch, {url: [FakeResp(text="ok")]})
+    s = CloudflareSession(SiteConfig(cookie="k=1", default_referer="https://a.gov/index"))
+    s.get_text(url)
+    assert sent[0]["headers"]["Referer"] == "https://a.gov/index"
+
+    # no default_referer -> site origin
+    sent = install_fake_get(monkeypatch, {url: [FakeResp(text="ok")]})
+    s = CloudflareSession(SiteConfig(cookie="k=1"))
+    s.get_text(url)
+    assert sent[0]["headers"]["Referer"] == "https://a.gov/"
+
+
+def test_no_referer_without_cookie(monkeypatch):
+    url = "https://a.gov/x"
+    sent = install_fake_get(monkeypatch, {url: [FakeResp(text="ok")]})
+    s = CloudflareSession(SiteConfig(default_referer="https://a.gov/index"))
+    s.get_text(url)
+    # default_referer only kicks in when a cookie is present.
+    assert "Referer" not in sent[0]["headers"]
+
+
 def test_retryable_status_is_retried(monkeypatch):
     url = "https://a.gov/x"
     install_fake_get(monkeypatch, {url: [FakeResp(status=522), FakeResp(text="recovered")]})

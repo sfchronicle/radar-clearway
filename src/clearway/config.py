@@ -45,8 +45,12 @@ class SiteConfig:
         profile:  fingerprint profile (impersonate + matching UA), paired so they
                   cannot drift apart.  Defaults to :data:`~clearway.profile.CHROME146`.
         cookie:   a ``Cookie`` header value from a real browser session, if any.
-        referer:  ``Referer`` header to send.  Defaults to the site origin at
-                  request time when a cookie is present and this is empty.
+        referer:  ``Referer`` header to send.  When empty and a cookie is
+                  present, falls back to ``default_referer`` if set, else the
+                  site origin at request time.
+        default_referer: the ``Referer`` used when ``referer`` is empty but a
+                  cookie is present.  Empty means "use the site origin".  Set
+                  this to pin a specific landing page (e.g. a site's index).
         proxy:    proxy URL applied to BOTH curl_cffi and the browser harvester,
                   e.g. ``http://user:pass@host:port``.  Use a *sticky/session*
                   residential proxy, not a rotating one — cf_clearance is IP-bound.
@@ -57,6 +61,7 @@ class SiteConfig:
     profile: ChromeProfile = DEFAULT_PROFILE
     cookie: str = ""
     referer: str = ""
+    default_referer: str = ""
     proxy: str = ""
     debug: bool = False
     retry: RetryPolicy = field(default_factory=RetryPolicy)

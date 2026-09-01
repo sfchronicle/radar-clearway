@@ -72,7 +72,7 @@ class CloudflareSession:
         if cookie:
             h["Cookie"] = cookie
             if not referer:
-                referer = origin_of(url)
+                referer = cfg.default_referer or origin_of(url)
         if referer:
             h["Referer"] = referer
 
