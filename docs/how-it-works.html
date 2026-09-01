@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>clearway 是怎么工作的</title>
+<title>How clearway works</title>
 <style>
   :root {
     --bg: #f7f7f6;
@@ -34,12 +34,11 @@
     margin: 0;
     background: var(--bg);
     color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     line-height: 1.6;
     padding: 32px 16px 64px;
   }
-  .wrap { max-width: 620px; margin: 0 auto; }
+  .wrap { max-width: 640px; margin: 0 auto; }
   h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
   .sub { font-size: 14px; color: var(--text-muted); margin: 0 0 28px; }
   .card {
@@ -79,31 +78,31 @@
 <body>
 <div class="wrap">
 
-  <h1>爬虫是怎么骗过 Cloudflare「保安」的</h1>
-  <p class="sub">面向非技术读者的图解。跟着箭头走一遍，User-Agent、指纹、cookie（手环）就全串起来了。</p>
+  <h1>How a scraper gets past the Cloudflare "bouncer"</h1>
+  <p class="sub">A plain-language walkthrough. Follow the arrows and the three ideas — User-Agent, fingerprint, and the cf_clearance cookie ("wristband") — all click into place.</p>
 
   <!-- Step 1 -->
   <div class="card">
-    <div class="t">🕷️ 第 1 步：爬虫敲门</div>
-    <div class="d">对网站说：「把这个页面给我。」这就是一次<b>请求</b>。</div>
+    <div class="t">🕷️ Step 1 — The scraper knocks</div>
+    <div class="d">It tells the site: "Give me this page." That's a <b>request</b>.</div>
   </div>
 
   <div class="arrow">↓</div>
 
   <!-- Step 2 -->
   <div class="card">
-    <div class="t" style="margin-bottom:8px;">🛡️ 第 2 步：保安查三关</div>
+    <div class="t" style="margin-bottom:8px;">🛡️ Step 2 — The bouncer runs three checks</div>
     <div class="gate">
-      <div class="g">👀 关一：长相要和暗号对得上</div>
-      <div class="gd"><b>指纹（TLS）</b>＝改不掉的「口音」，得是真 Chrome；<b>User-Agent</b>＝嘴上说的「我是 Chrome 146」。两者必须一致。</div>
+      <div class="g">👀 Check 1 — looks must match the story</div>
+      <div class="gd">The <b>TLS fingerprint</b> is an "accent" you can't fake by talking — it has to look like real Chrome. The <b>User-Agent</b> is what you say out loud ("I'm Chrome 146"). The two must agree.</div>
     </div>
     <div class="gate">
-      <div class="g">🎟️ 关二：手上有没有「章」</div>
-      <div class="gd">那个盖在手背上的章叫 <b>cf_clearance</b>，意思是「已经通过测试」。</div>
+      <div class="g">🎟️ Check 2 — do you have the "stamp"?</div>
+      <div class="gd">The hand stamp is the <b>cf_clearance</b> cookie. It means "already passed the bot test."</div>
     </div>
     <div class="gate">
-      <div class="g">📍 关三：从哪条街来</div>
-      <div class="gd">你的 <b>IP 地址</b>。从「数据中心街」来的天生更可疑。</div>
+      <div class="g">📍 Check 3 — which street are you from?</div>
+      <div class="gd">Your <b>IP address</b>. Arriving from "datacenter street" (e.g. GitHub Actions) is inherently more suspicious.</div>
     </div>
   </div>
 
@@ -111,14 +110,14 @@
 
   <!-- Step 3 -->
   <div class="card">
-    <div class="t" style="margin-bottom:10px;">🤔 第 3 步：三关都过了吗？</div>
+    <div class="t" style="margin-bottom:10px;">🤔 Step 3 — Did all three checks pass?</div>
     <div class="branch pass">
       <span>✅</span>
-      <div><span class="k">过了</span> → 保安放行，爬虫拿到网页。搞定！</div>
+      <div><span class="k">Yes</span> → the bouncer lets you in and the scraper gets the page. Done.</div>
     </div>
     <div class="branch fail">
       <span>❌</span>
-      <div><span class="k">卡住了（比如没有章）</span> → 保安甩出一个 <b>403</b>，挡在门外。下面想办法拿章 ↓</div>
+      <div><span class="k">Stuck (e.g. no stamp)</span> → the bouncer returns a <b>403</b> and blocks you. Time to go earn a stamp ↓</div>
     </div>
   </div>
 
@@ -126,27 +125,27 @@
 
   <!-- Step 4 -->
   <div class="card">
-    <div class="t">🌐 第 4 步：叫「真浏览器」去拿章</div>
-    <div class="d">偷偷启动一个真正的浏览器（Playwright），像真人一样把门口测试做完，<b>盖到那个章（cf_clearance）</b>。</div>
+    <div class="t">🌐 Step 4 — Send a real browser to earn the stamp</div>
+    <div class="d">Quietly launch an actual browser (Playwright), let it complete the door test like a real person, and <b>collect the stamp (cf_clearance)</b>.</div>
   </div>
 
   <div class="arrow">↓</div>
 
   <!-- Step 5 -->
   <div class="card">
-    <div class="t">🗄️ 第 5 步：把章存好，下次直接亮</div>
-    <div class="d">拿章很费劲，所以存起来反复用。而且<b>每家店（每个网站）单独存各自的章</b>——A 店的章在 B 店不认。</div>
+    <div class="t">🗄️ Step 5 — Save the stamp, flash it next time</div>
+    <div class="d">Earning a stamp is expensive, so cache it and reuse it. And <b>keep a separate stamp per site</b> — one club's stamp isn't valid at another.</div>
   </div>
 
-  <div class="loop">🔁 戴着章重新敲门，回到第 3 步 → ✅ 放行</div>
+  <div class="loop">🔁 Re-knock wearing the stamp → back to Step 3 → ✅ let in</div>
 
   <!-- Exception -->
   <div class="note">
-    <div class="t">📍 一个例外：如果卡在「关三」</div>
-    <div class="d">如果保安纯粹嫌你从「数据中心街」来（IP 被封），再好的伪装和章都没用 —— 得<b>换一条住宅区的街过来</b>（挂一个住宅代理）。这个包也支持。</div>
+    <div class="t">📍 One exception: when you're stuck on Check 3</div>
+    <div class="d">If the bouncer simply dislikes that you came from "datacenter street" (your IP is blocked), no disguise or stamp helps — you need to <b>arrive from a residential street instead</b> (route through a residential proxy). clearway supports that too.</div>
   </div>
 
-  <footer>radar-clearway · 图解版说明</footer>
+  <footer>radar-clearway · visual explainer</footer>
 
 </div>
 </body>
