@@ -1,0 +1,54 @@
+<svg width="100%" viewBox="0 0 760 680" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <title>How clearway gets past Cloudflare</title>
+  <desc>A scraper knocks; Cloudflare runs three checks (fingerprint vs User-Agent, the cf_clearance stamp, and the IP); if blocked with a 403, a real browser earns a stamp which is cached per site and reused; a residential proxy handles IP-only blocks.</desc>
+
+  <!-- self-contained light panel so it reads on any GitHub theme -->
+  <rect x="1" y="1" width="758" height="672" rx="16" fill="#fbfbfa" stroke="#e4e2dd"/>
+
+  <text x="24" y="38" font-size="20" font-weight="600" fill="#1a1a19">How a scraper gets past the Cloudflare &#8220;bouncer&#8221;</text>
+  <text x="24" y="60" font-size="13" fill="#55524c">The knock &#8594; 3 checks &#8594; earn a stamp &#8594; reuse it &#8212; in plain language.</text>
+
+  <!-- Step 1 -->
+  <rect x="24" y="78" width="712" height="52" rx="10" fill="#ffffff" stroke="#e7e5e0"/>
+  <text x="42" y="104" font-size="15" font-weight="600" fill="#1a1a19">&#128375;&#65039;  Step 1 — The scraper knocks</text>
+  <text x="42" y="122" font-size="13" fill="#55524c">Asks the site for a page. That request is one &#8220;knock.&#8221;</text>
+
+  <text x="380" y="150" font-size="18" fill="#9a968e" text-anchor="middle">&#8595;</text>
+
+  <!-- Step 2 -->
+  <rect x="24" y="158" width="712" height="116" rx="10" fill="#ffffff" stroke="#e7e5e0"/>
+  <text x="42" y="184" font-size="15" font-weight="600" fill="#1a1a19">&#128737;&#65039;  Step 2 — The bouncer runs three checks</text>
+  <text x="42" y="210" font-size="13" fill="#55524c">&#128064;  Looks vs. story — TLS fingerprint (real Chrome) must agree with the User-Agent</text>
+  <text x="42" y="234" font-size="13" fill="#55524c">&#127903;&#65039;  Has a stamp? — the cf_clearance cookie means &#8220;already passed the bot test&#8221;</text>
+  <text x="42" y="258" font-size="13" fill="#55524c">&#128205;  Which street? — your IP; datacenter IPs (e.g. GitHub Actions) look suspicious</text>
+
+  <text x="380" y="294" font-size="18" fill="#9a968e" text-anchor="middle">&#8595;</text>
+
+  <!-- Step 3 -->
+  <rect x="24" y="300" width="712" height="92" rx="10" fill="#ffffff" stroke="#e7e5e0"/>
+  <text x="42" y="326" font-size="15" font-weight="600" fill="#1a1a19">&#129300;  Step 3 — Did all three pass?</text>
+  <text x="42" y="352" font-size="13" font-weight="600" fill="#2f7d4f">&#9989;  Yes &#8594; you&#8217;re let in, the page comes back.</text>
+  <text x="42" y="376" font-size="13" font-weight="600" fill="#b3402f">&#10060;  Stuck (e.g. no stamp) &#8594; 403, blocked &#8594; go earn one &#8595;</text>
+
+  <text x="380" y="412" font-size="18" fill="#9a968e" text-anchor="middle">&#8595;</text>
+
+  <!-- Step 4 -->
+  <rect x="24" y="418" width="712" height="52" rx="10" fill="#ffffff" stroke="#e7e5e0"/>
+  <text x="42" y="444" font-size="15" font-weight="600" fill="#1a1a19">&#127760;  Step 4 — Send a real browser to earn the stamp</text>
+  <text x="42" y="462" font-size="13" fill="#55524c">Launch Playwright, pass the door test like a person, collect the cf_clearance stamp.</text>
+
+  <text x="380" y="490" font-size="18" fill="#9a968e" text-anchor="middle">&#8595;</text>
+
+  <!-- Step 5 -->
+  <rect x="24" y="496" width="712" height="52" rx="10" fill="#ffffff" stroke="#e7e5e0"/>
+  <text x="42" y="522" font-size="15" font-weight="600" fill="#1a1a19">&#128452;&#65039;  Step 5 — Save the stamp, then just flash it</text>
+  <text x="42" y="540" font-size="13" fill="#55524c">Cache it to avoid re-earning. One stamp per site — another site&#8217;s won&#8217;t work.</text>
+
+  <text x="380" y="570" font-size="13" fill="#55524c" text-anchor="middle">&#128260;  Re-knock wearing the stamp &#8594; back to Step 3 &#8594; &#9989; let in</text>
+
+  <!-- Exception note -->
+  <rect x="24" y="586" width="712" height="76" rx="10" fill="none" stroke="#cfccc4" stroke-dasharray="4 4"/>
+  <text x="42" y="612" font-size="14" font-weight="600" fill="#1a1a19">&#128205;  Exception — when it&#8217;s just your IP (Check 3)</text>
+  <text x="42" y="634" font-size="13" fill="#55524c">No disguise or stamp helps if your IP itself is blocked. Arrive from a</text>
+  <text x="42" y="652" font-size="13" fill="#55524c">residential street instead — route through a residential proxy. clearway supports that.</text>
+</svg>

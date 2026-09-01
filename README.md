@@ -4,9 +4,11 @@ A small, reusable **Cloudflare-aware HTTP layer** for scraping government (and
 other protected) sites. Extracted so every scraper repo shares one battle-tested
 implementation instead of copy-pasting `curl_cffi` + Playwright glue.
 
-> 📊 **New to this? Start with the plain-language visual explainer:**
-> [How clearway gets past Cloudflare](docs/how-it-works.html) — the whole
-> knock → checkpoints → get-the-stamp → reuse-it flow as a picture, no code.
+![How clearway gets past Cloudflare — a scraper knocks, Cloudflare runs three checks, a real browser earns a cf_clearance stamp that is cached per site and reused](docs/how-it-works.svg)
+
+*New here? The diagram above is the whole flow in plain language — no code. Same
+content as a standalone page: [docs/how-it-works.html](docs/how-it-works.html)
+(open it in a browser; GitHub shows `.html` files as source).*
 
 ## What it does
 
