@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>clearway 是怎么工作的</title>
+<style>
+  :root {
+    --bg: #f7f7f6;
+    --surface: #ffffff;
+    --border: #e4e2dd;
+    --border-strong: #cfccc4;
+    --text-primary: #1a1a19;
+    --text-secondary: #55524c;
+    --text-muted: #8a867e;
+    --accent: #2f7d4f;
+    --danger: #b3402f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a19;
+      --surface: #232320;
+      --border: #35352f;
+      --border-strong: #4a4a42;
+      --text-primary: #ededea;
+      --text-secondary: #b6b3ab;
+      --text-muted: #86837b;
+      --accent: #6cc08a;
+      --danger: #e08b7d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  .sub { font-size: 14px; color: var(--text-muted); margin: 0 0 28px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .card .t { font-weight: 600; font-size: 16px; }
+  .card .d { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
+  .arrow { text-align: center; font-size: 20px; color: var(--text-muted); margin: 6px 0; }
+  .gate { font-size: 14px; margin-bottom: 8px; }
+  .gate:last-child { margin-bottom: 0; }
+  .gate .g { font-weight: 600; }
+  .gate .gd { color: var(--text-secondary); }
+  b { font-weight: 600; }
+  .branch {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 8px 10px; font-size: 14px;
+  }
+  .branch.pass { border-left: 3px solid var(--accent); margin-bottom: 8px; }
+  .branch.fail { border-left: 3px solid var(--danger); }
+  .pass .k { color: var(--accent); font-weight: 600; }
+  .fail .k { color: var(--danger); font-weight: 600; }
+  .loop { text-align: center; font-size: 15px; color: var(--text-secondary); margin: 10px 0; }
+  .note {
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-top: 16px;
+  }
+  .note .t { font-weight: 600; font-size: 15px; }
+  .note .d { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
+  footer { margin-top: 32px; font-size: 13px; color: var(--text-muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>爬虫是怎么骗过 Cloudflare「保安」的</h1>
+  <p class="sub">面向非技术读者的图解。跟着箭头走一遍，User-Agent、指纹、cookie（手环）就全串起来了。</p>
+
+  <!-- Step 1 -->
+  <div class="card">
+    <div class="t">🕷️ 第 1 步：爬虫敲门</div>
+    <div class="d">对网站说：「把这个页面给我。」这就是一次<b>请求</b>。</div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 2 -->
+  <div class="card">
+    <div class="t" style="margin-bottom:8px;">🛡️ 第 2 步：保安查三关</div>
+    <div class="gate">
+      <div class="g">👀 关一：长相要和暗号对得上</div>
+      <div class="gd"><b>指纹（TLS）</b>＝改不掉的「口音」，得是真 Chrome；<b>User-Agent</b>＝嘴上说的「我是 Chrome 146」。两者必须一致。</div>
+    </div>
+    <div class="gate">
+      <div class="g">🎟️ 关二：手上有没有「章」</div>
+      <div class="gd">那个盖在手背上的章叫 <b>cf_clearance</b>，意思是「已经通过测试」。</div>
+    </div>
+    <div class="gate">
+      <div class="g">📍 关三：从哪条街来</div>
+      <div class="gd">你的 <b>IP 地址</b>。从「数据中心街」来的天生更可疑。</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 3 -->
+  <div class="card">
+    <div class="t" style="margin-bottom:10px;">🤔 第 3 步：三关都过了吗？</div>
+    <div class="branch pass">
+      <span>✅</span>
+      <div><span class="k">过了</span> → 保安放行，爬虫拿到网页。搞定！</div>
+    </div>
+    <div class="branch fail">
+      <span>❌</span>
+      <div><span class="k">卡住了（比如没有章）</span> → 保安甩出一个 <b>403</b>，挡在门外。下面想办法拿章 ↓</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 4 -->
+  <div class="card">
+    <div class="t">🌐 第 4 步：叫「真浏览器」去拿章</div>
+    <div class="d">偷偷启动一个真正的浏览器（Playwright），像真人一样把门口测试做完，<b>盖到那个章（cf_clearance）</b>。</div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 5 -->
+  <div class="card">
+    <div class="t">🗄️ 第 5 步：把章存好，下次直接亮</div>
+    <div class="d">拿章很费劲，所以存起来反复用。而且<b>每家店（每个网站）单独存各自的章</b>——A 店的章在 B 店不认。</div>
+  </div>
+
+  <div class="loop">🔁 戴着章重新敲门，回到第 3 步 → ✅ 放行</div>
+
+  <!-- Exception -->
+  <div class="note">
+    <div class="t">📍 一个例外：如果卡在「关三」</div>
+    <div class="d">如果保安纯粹嫌你从「数据中心街」来（IP 被封），再好的伪装和章都没用 —— 得<b>换一条住宅区的街过来</b>（挂一个住宅代理）。这个包也支持。</div>
+  </div>
+
+  <footer>radar-clearway · 图解版说明</footer>
+
+</div>
+</body>
+</html>

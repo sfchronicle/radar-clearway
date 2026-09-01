@@ -4,6 +4,10 @@ A small, reusable **Cloudflare-aware HTTP layer** for scraping government (and
 other protected) sites. Extracted so every scraper repo shares one battle-tested
 implementation instead of copy-pasting `curl_cffi` + Playwright glue.
 
+> 📊 **New to this? Start with the plain-language visual explainer (中文):**
+> [How clearway gets past Cloudflare](docs/how-it-works.html) — the whole
+> knock → checkpoints → get-the-stamp → reuse-it flow as a picture, no code.
+
 ## What it does
 
 - **curl_cffi Chrome TLS impersonation** for the common case — the fingerprint
