@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "radar-clearway"
+version = "0.1.0"
+description = "A Cloudflare-aware HTTP layer for scraping government and other protected sites."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "SFChronicle / Hearst" }]
+keywords = ["cloudflare", "scraping", "curl_cffi", "http", "cf_clearance"]
+dependencies = [
+    "curl_cffi>=0.7.0",
+]
+
+[project.optional-dependencies]
+# Browser backend for solving Cloudflare JS challenges (cf_clearance harvest).
+browser = ["playwright>=1.40.0"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.urls]
+Repository = "https://github.com/sfchronicle/radar-clearway"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clearway"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
