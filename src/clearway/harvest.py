@@ -253,9 +253,23 @@ class PlaywrightFetcher:
                         text = resp.text()
                     except Exception:  # noqa: BLE001
                         text = content.decode("utf-8", "replace")
-                    log.info(
-                        "browser-fetched %s (HTTP %d, %d bytes)", url, resp.status, len(content)
-                    )
+                    if resp.status >= 400:
+                        # Log the block-page title so we can tell a solvable
+                        # challenge ("Just a moment…") from a hard IP/WAF block
+                        # ("Sorry, you have been blocked" / "Attention Required").
+                        try:
+                            page_title = page.title()
+                        except Exception:  # noqa: BLE001
+                            page_title = ""
+                        log.info(
+                            "browser-fetch blocked: %s -> HTTP %d, title=%r (%d bytes)",
+                            url, resp.status, page_title[:120], len(content),
+                        )
+                    else:
+                        log.info(
+                            "browser-fetched %s (HTTP %d, %d bytes)",
+                            url, resp.status, len(content),
+                        )
                     return BrowserResult(resp.status, content, text)
 
                 # Download path: wait for the file, then read its bytes.
