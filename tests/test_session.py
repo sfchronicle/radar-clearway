@@ -151,6 +151,26 @@ def test_no_referer_without_cookie(monkeypatch):
     assert "Referer" not in sent[0]["headers"]
 
 
+def test_harvested_cf_clearance_replaces_stale_configured_one(monkeypatch):
+    url = "https://a.gov/x"
+    sent = install_fake_get(
+        monkeypatch, {url: [FakeResp(status=403), FakeResp(text="ok")]}
+    )
+    # Configured cookie already carries a STALE cf_clearance plus another cookie.
+    s = CloudflareSession(
+        SiteConfig(cookie="cf_clearance=STALE; sess=keep"), harvester=FakeHarvester()
+    )
+    s.get_text(url)
+
+    retry_cookie = sent[1]["headers"]["Cookie"]
+    # Exactly one cf_clearance, and it's the freshly harvested value, not STALE.
+    assert retry_cookie.count("cf_clearance=") == 1
+    assert "cf_clearance=STALE" not in retry_cookie
+    assert "cf_clearance=a.gov-token" in retry_cookie
+    # Unrelated cookies from the configured header are preserved.
+    assert "sess=keep" in retry_cookie
+
+
 def test_retryable_status_is_retried(monkeypatch):
     url = "https://a.gov/x"
     install_fake_get(monkeypatch, {url: [FakeResp(status=522), FakeResp(text="recovered")]})

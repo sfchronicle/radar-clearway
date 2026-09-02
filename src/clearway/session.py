@@ -30,6 +30,33 @@ from .urls import host_of, normalize_request_url, origin_of
 log = logging.getLogger("clearway.session")
 
 
+def _parse_cookie(header: str) -> list[tuple[str, str]]:
+    """Split a ``a=1; b=2`` cookie header into ordered (name, value) pairs."""
+    pairs: list[tuple[str, str]] = []
+    for part in header.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        name, sep, value = part.partition("=")
+        if sep:
+            pairs.append((name.strip(), value.strip()))
+    return pairs
+
+
+def _merge_cookies(base: str, override: str) -> str:
+    """Merge two cookie headers by name; ``override`` wins on a name collision.
+
+    Prevents two values for the same cookie (e.g. a stale configured
+    ``cf_clearance`` plus a freshly harvested one) ending up in a single header,
+    which Cloudflare rejects.  Order follows first appearance; an overridden
+    cookie keeps its original position with the new value.
+    """
+    merged: dict[str, str] = {}
+    for name, value in _parse_cookie(base) + _parse_cookie(override):
+        merged[name] = value  # later (override) assignment wins
+    return "; ".join(f"{name}={value}" for name, value in merged.items())
+
+
 class CloudflareSession:
     """Fetches URLs for one site, transparently handling Cloudflare challenges.
 
@@ -66,7 +93,11 @@ class CloudflareSession:
         h: dict[str, str] = {"User-Agent": cfg.profile.user_agent}
 
         harvested = self._cf_cookies.get(host_of(url), "")
-        cookie = "; ".join(filter(None, [cfg.cookie, harvested]))
+        # Merge by cookie name, not by string concatenation: a freshly harvested
+        # cf_clearance must REPLACE any stale one in the configured cookie, not
+        # sit next to it.  Two cf_clearance values in one header get the request
+        # rejected (403).  Harvested values win on any name collision.
+        cookie = _merge_cookies(cfg.cookie, harvested)
 
         referer = cfg.referer
         if cookie:
