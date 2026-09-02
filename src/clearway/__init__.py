@@ -19,7 +19,13 @@ Swap the browser backend (nodriver, FlareSolverr, …) by passing a custom
 from __future__ import annotations
 
 from .config import RetryPolicy, SiteConfig
-from .harvest import Harvester, PlaywrightHarvester
+from .harvest import (
+    BrowserFetcher,
+    BrowserResult,
+    Harvester,
+    PlaywrightFetcher,
+    PlaywrightHarvester,
+)
 from .profile import CHROME146, DEFAULT_PROFILE, ChromeProfile
 from .session import CloudflareSession
 from .urls import absolute_url, host_of, normalize_request_url, origin_of
@@ -35,6 +41,9 @@ __all__ = [
     "DEFAULT_PROFILE",
     "Harvester",
     "PlaywrightHarvester",
+    "BrowserFetcher",
+    "PlaywrightFetcher",
+    "BrowserResult",
     "normalize_request_url",
     "absolute_url",
     "host_of",

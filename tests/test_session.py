@@ -5,7 +5,22 @@ from __future__ import annotations
 import pytest
 
 import clearway.session as session_mod
-from clearway import CloudflareSession, SiteConfig
+from clearway import BrowserResult, CloudflareSession, SiteConfig
+
+
+class FakeFetcher:
+    """Records fetch calls and returns a canned BrowserResult (or None)."""
+
+    def __init__(self, result):
+        self.result = result
+        self.calls: list[str] = []
+
+    def fetch(self, url, *, origin, profile, proxy=""):
+        self.calls.append(url)
+        return self.result
+
+    def close(self):
+        pass
 
 
 class FakeResp:
@@ -117,7 +132,7 @@ def test_failed_harvest_not_cached_and_raises_403(monkeypatch):
             DeadHarvester.calls += 1
             return ""  # could not solve
 
-    s = CloudflareSession(harvester=DeadHarvester())
+    s = CloudflareSession(harvester=DeadHarvester(), browser_fallback=False)
     from urllib.error import HTTPError
 
     with pytest.raises(HTTPError):
@@ -169,6 +184,42 @@ def test_harvested_cf_clearance_replaces_stale_configured_one(monkeypatch):
     assert "cf_clearance=a.gov-token" in retry_cookie
     # Unrelated cookies from the configured header are preserved.
     assert "sess=keep" in retry_cookie
+
+
+def test_browser_fetch_when_cookie_handoff_still_403(monkeypatch):
+    url = "https://a.gov/doc.pdf"
+    # curl 403; harvest "succeeds" but the retry is STILL 403 (hand-off rejected).
+    install_fake_get(monkeypatch, {url: [FakeResp(status=403), FakeResp(status=403)]})
+    fetcher = FakeFetcher(BrowserResult(200, b"%PDF-bytes", "%PDF-bytes"))
+    s = CloudflareSession(harvester=FakeHarvester(), fetcher=fetcher)
+
+    assert s.get_bytes(url) == b"%PDF-bytes"
+    assert fetcher.calls == [url]  # browser fetched it
+
+
+def test_browser_only_host_skips_curl_next_time(monkeypatch):
+    u1, u2 = "https://a.gov/1", "https://a.gov/2"
+    install_fake_get(
+        monkeypatch,
+        {u1: [FakeResp(status=403), FakeResp(status=403)], u2: [FakeResp(text="unused")]},
+    )
+    fetcher = FakeFetcher(BrowserResult(200, b"data", "data"))
+    s = CloudflareSession(harvester=FakeHarvester(), fetcher=fetcher)
+
+    s.get_text(u1)  # first request proves the host needs the browser
+    s.get_text(u2)  # same host -> should go straight to the browser, no curl
+    # u2 was served by the browser (its curl script entry was never consumed).
+    assert fetcher.calls == [u1, u2]
+
+
+def test_browser_fetch_not_used_when_curl_succeeds(monkeypatch):
+    url = "https://a.gov/x"
+    install_fake_get(monkeypatch, {url: [FakeResp(text="direct")]})
+    fetcher = FakeFetcher(BrowserResult(200, b"nope", "nope"))
+    s = CloudflareSession(harvester=FakeHarvester(), fetcher=fetcher)
+
+    assert s.get_text(url) == "direct"
+    assert fetcher.calls == []  # browser never touched
 
 
 def test_retryable_status_is_retried(monkeypatch):

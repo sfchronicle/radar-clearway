@@ -23,8 +23,16 @@ from urllib.error import HTTPError, URLError
 from curl_cffi import requests as cffi_requests
 from curl_cffi.requests.errors import RequestsError
 
+import atexit
+
 from .config import SiteConfig
-from .harvest import Harvester, PlaywrightHarvester
+from .harvest import (
+    BrowserFetcher,
+    BrowserResult,
+    Harvester,
+    PlaywrightFetcher,
+    PlaywrightHarvester,
+)
 from .urls import host_of, normalize_request_url, origin_of
 
 log = logging.getLogger("clearway.session")
@@ -67,6 +75,12 @@ class CloudflareSession:
                    :class:`~clearway.harvest.PlaywrightHarvester`; pass your own
                    (nodriver, FlareSolverr, …) to swap the browser without
                    touching this class.
+        fetcher:   browser backend that DOWNLOADS a URL when even a harvested
+                   cf_clearance is rejected (strict sites like nycourts reject
+                   the cookie handed off to curl_cffi on a fingerprint mismatch).
+                   Defaults to :class:`~clearway.harvest.PlaywrightFetcher`.
+        browser_fallback: set False to disable the browser-fetch fallback (and
+                   not create a default fetcher).  Ignored if ``fetcher`` is set.
     """
 
     def __init__(
@@ -74,12 +88,36 @@ class CloudflareSession:
         config: SiteConfig | None = None,
         *,
         harvester: Harvester | None = None,
+        fetcher: BrowserFetcher | None = None,
+        browser_fallback: bool = True,
     ):
         self.config = config or SiteConfig()
         self.harvester: Harvester = harvester or PlaywrightHarvester()
+        if fetcher is not None:
+            self.fetcher: BrowserFetcher | None = fetcher
+        elif browser_fallback:
+            self.fetcher = PlaywrightFetcher()
+        else:
+            self.fetcher = None
         # host -> harvested cookie string (cf_clearance etc.).  cf_clearance is
         # host-scoped, so it is never shared across hosts.
         self._cf_cookies: dict[str, str] = {}
+        # hosts proven to need the browser fetch (cookie hand-off rejected), so
+        # later requests skip the doomed curl_cffi attempt and go straight there.
+        self._browser_only: set[str] = set()
+        if self.fetcher is not None:
+            atexit.register(self.close)
+
+    def close(self) -> None:
+        """Release the browser fetcher, if any.  Safe to call more than once."""
+        if self.fetcher is not None:
+            self.fetcher.close()
+
+    def __enter__(self) -> "CloudflareSession":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     # -- headers -----------------------------------------------------------
 
@@ -127,11 +165,17 @@ class CloudflareSession:
 
     # -- fetch -------------------------------------------------------------
 
-    def get(self, url: str, *, timeout: int = 60) -> cffi_requests.Response:
-        """GET *url* with impersonation, retries, and Cloudflare 403 harvesting.
+    def get(
+        self, url: str, *, timeout: int = 60
+    ) -> "cffi_requests.Response | BrowserResult":
+        """GET *url*, handling Cloudflare via retries, cookie harvest, and — as a
+        last resort — a full in-browser fetch.
 
-        Raises :class:`urllib.error.HTTPError` / :class:`~urllib.error.URLError`
-        on non-retryable failures and after retries are exhausted.
+        Returns a curl_cffi ``Response`` on the normal path, or a
+        :class:`~clearway.harvest.BrowserResult` when the browser fetched it;
+        both expose ``.text``, ``.content``, and ``.status_code``.  Raises
+        :class:`urllib.error.HTTPError` / :class:`~urllib.error.URLError` on
+        non-retryable failures and after retries are exhausted.
         """
         url = normalize_request_url(url)
         cfg = self.config
@@ -139,6 +183,12 @@ class CloudflareSession:
         proxies = self._proxies()
         last_exc: HTTPError | URLError | None = None
         harvested_this_call = False
+
+        # Hosts already proven to need the browser: skip the doomed curl attempt.
+        if self.fetcher is not None and host_of(url) in self._browser_only:
+            result = self._browser_fetch(url)
+            if result is not None:
+                return result
 
         attempt = 0
         while attempt <= retry.max_retries:
@@ -190,6 +240,15 @@ class CloudflareSession:
                     self._cf_cookies[host] = cookie
                     continue
 
+            # Still blocked (403) — the cookie hand-off to curl_cffi was rejected.
+            # Fetch the URL inside the browser itself, where the fingerprint that
+            # passed the challenge is the one downloading the content.
+            if resp.status_code == 403 and self.fetcher is not None:
+                result = self._browser_fetch(url)
+                if result is not None:
+                    self._browser_only.add(host)
+                    return result
+
             raise HTTPError(
                 url,
                 resp.status_code,
@@ -200,6 +259,20 @@ class CloudflareSession:
 
         assert last_exc is not None  # loop always returns or raises otherwise
         raise last_exc
+
+    def _browser_fetch(self, url: str) -> "BrowserResult | None":
+        """Try to download *url* in the browser; return it only on a <400 status."""
+        if self.fetcher is None:
+            return None
+        result = self.fetcher.fetch(
+            url,
+            origin=origin_of(url),
+            profile=self.config.profile,
+            proxy=self.config.proxy,
+        )
+        if result is not None and result.status_code < 400:
+            return result
+        return None
 
     def get_text(self, url: str, *, timeout: int = 60) -> str:
         """Fetch *url* and return its body as text."""

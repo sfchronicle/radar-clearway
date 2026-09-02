@@ -19,6 +19,12 @@ content as a standalone page: [docs/how-it-works.html](docs/how-it-works.html)
   challenge once in a real browser and **caches the cookie per host**, replaying
   it on later requests — so a batch of PDF downloads pays the browser cost at
   most once per host.
+- **Browser-fetch last resort** (no proxy needed): if a site is strict enough
+  that it rejects even a harvested `cf_clearance` handed to curl_cffi (a
+  fingerprint mismatch — e.g. nycourts.gov from a datacenter IP), clearway
+  downloads the URL *inside the same browser that passed the challenge*, so
+  there is no cookie hand-off. Slower, but works without a proxy; handles both
+  inline pages and attachment-style PDFs. Disable with `browser_fallback=False`.
 - **Per-host cookie isolation**: `cf_clearance` is host-scoped, so a cookie for
   site A is never replayed against site B (the key fix for multi-site use).
 - **Retries with backoff** for network errors and Cloudflare-style 5xx (incl.

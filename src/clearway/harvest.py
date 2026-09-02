@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -128,3 +129,161 @@ class PlaywrightHarvester:
         except Exception as exc:  # noqa: BLE001 — best-effort fallback, never fatal
             log.warning("browser harvest failed: %r", exc)
             return ""
+
+
+class BrowserResult:
+    """A resource fetched inside the browser — a page's HTML or a file's bytes."""
+
+    def __init__(self, status_code: int, content: bytes, text: str):
+        self.status_code = status_code
+        self.content = content
+        self.text = text
+
+
+class BrowserFetcher(Protocol):
+    """Downloads a URL *inside* a real browser and returns its body.
+
+    Unlike a :class:`Harvester` (which hands a cookie to curl_cffi and can be
+    rejected on a fingerprint mismatch), this fetches the content with the very
+    browser that passed the challenge — no hand-off — so a strict site that
+    rejects the cookie replay still works.  Slower than curl, needs no proxy.
+    Returns ``None`` if the fetch could not be completed.  :meth:`close` releases
+    the browser.
+    """
+
+    def fetch(
+        self, url: str, *, origin: str, profile: ChromeProfile, proxy: str = ""
+    ) -> "BrowserResult | None": ...
+
+    def close(self) -> None: ...
+
+
+class PlaywrightFetcher:
+    """Fetch URLs inside one long-lived headless Chromium.
+
+    The browser is opened lazily on first use and reused for every later fetch,
+    so a batch of downloads pays the launch cost once and solves each host's
+    challenge once (the cf_clearance stays in the browser's own cookie jar).
+    ``playwright`` is imported lazily, so the package works without the
+    ``[browser]`` extra until a fetch is actually attempted.
+    """
+
+    def __init__(self, solve_timeout_sec: float = 25.0, nav_timeout_ms: int = 60_000):
+        self.solve_timeout_sec = solve_timeout_sec
+        self.nav_timeout_ms = nav_timeout_ms
+        self._pw = None
+        self._browser = None
+        self._context = None
+        self._cleared_hosts: set[str] = set()
+
+    def _ensure_context(self, profile: ChromeProfile, proxy: str) -> bool:
+        """Open the browser + context once; return False if playwright is missing."""
+        if self._context is not None:
+            return True
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            log.warning(
+                "playwright not installed — cannot browser-fetch. "
+                "Install the extra: pip install 'radar-clearway[browser]' && "
+                "playwright install chromium --with-deps"
+            )
+            return False
+        self._pw = sync_playwright().start()
+        launch_kwargs: dict = {
+            "headless": True,
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        }
+        if proxy:
+            launch_kwargs["proxy"] = _playwright_proxy(proxy)
+        self._browser = self._pw.chromium.launch(**launch_kwargs)
+        self._context = self._browser.new_context(
+            user_agent=profile.user_agent,
+            locale="en-US",
+            viewport={"width": 1366, "height": 768},
+            accept_downloads=True,  # some sites serve PDFs as attachments
+        )
+        self._context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+        )
+        return True
+
+    def fetch(
+        self, url: str, *, origin: str, profile: ChromeProfile, proxy: str = ""
+    ) -> "BrowserResult | None":
+        if not self._ensure_context(profile, proxy):
+            return None
+        assert self._context is not None
+        try:
+            page = self._context.new_page()
+            downloads: list = []
+            page.on("download", lambda d: downloads.append(d))
+            try:
+                host = urlparse(url).hostname or ""
+                # Solve the challenge once per host, on the origin root; the
+                # cf_clearance then lives in the shared context for later fetches.
+                if host not in self._cleared_hosts:
+                    page.goto(origin, wait_until="load", timeout=self.nav_timeout_ms)
+                    deadline = time.time() + self.solve_timeout_sec
+                    while time.time() < deadline:
+                        if any(c["name"] == "cf_clearance" for c in self._context.cookies()):
+                            break
+                        page.wait_for_timeout(500)
+                    self._cleared_hosts.add(host)
+
+                # Navigating to a file the server marks as an attachment makes
+                # Chromium download it instead of rendering — goto then raises
+                # "Download is starting" / ERR_ABORTED, and the bytes arrive via
+                # a download event instead.  Handle both.
+                resp = None
+                try:
+                    resp = page.goto(url, wait_until="load", timeout=self.nav_timeout_ms)
+                except Exception as nav_exc:  # noqa: BLE001
+                    msg = str(nav_exc)
+                    if "Download is starting" not in msg and "ERR_ABORTED" not in msg:
+                        raise
+
+                if resp is not None:
+                    content = resp.body()
+                    try:
+                        text = resp.text()
+                    except Exception:  # noqa: BLE001
+                        text = content.decode("utf-8", "replace")
+                    log.info(
+                        "browser-fetched %s (HTTP %d, %d bytes)", url, resp.status, len(content)
+                    )
+                    return BrowserResult(resp.status, content, text)
+
+                # Download path: wait for the file, then read its bytes.
+                deadline = time.time() + 20
+                while not downloads and time.time() < deadline:
+                    page.wait_for_timeout(200)
+                if downloads:
+                    data = Path(downloads[0].path()).read_bytes()
+                    log.info("browser-downloaded %s (%d bytes)", url, len(data))
+                    return BrowserResult(200, data, data.decode("utf-8", "replace"))
+                return None
+            finally:
+                page.close()
+        except Exception as exc:  # noqa: BLE001 — best-effort fallback, never fatal
+            log.warning("browser fetch failed for %s: %r", url, exc)
+            return None
+
+    def close(self) -> None:
+        for obj in (self._context, self._browser):
+            try:
+                if obj is not None:
+                    obj.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            if self._pw is not None:
+                self._pw.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._pw = self._browser = self._context = None
+        self._cleared_hosts.clear()
