@@ -35,6 +35,27 @@ class Harvester(Protocol):
     def harvest(self, origin: str, *, profile: ChromeProfile, proxy: str = "") -> str: ...
 
 
+def _is_download_error(msg: str) -> bool:
+    """True if a navigation error means the target was downloaded, not rendered."""
+    return "Download is starting" in msg or "ERR_ABORTED" in msg
+
+
+def _safe_text(response, content: bytes) -> str:
+    """response.text(), falling back to a lenient decode of the raw bytes."""
+    try:
+        return response.text()
+    except Exception:  # noqa: BLE001
+        return content.decode("utf-8", "replace")
+
+
+def _safe_title(page) -> str:
+    """page.title(), or '' if it can't be read."""
+    try:
+        return page.title()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _playwright_proxy(proxy: str) -> dict[str, str]:
     """Convert ``scheme://user:pass@host:port`` into Playwright's proxy dict."""
     p = urlparse(proxy)
@@ -220,72 +241,89 @@ class PlaywrightFetcher:
         assert self._context is not None
         try:
             page = self._context.new_page()
+            # Capture the real content whenever it arrives — the target path may
+            # serve its OWN "Just a moment…" interstitial, so the good response
+            # (or a download) shows up only after the challenge auto-solves, not
+            # from the initial goto.
             downloads: list = []
+            good: list = []
             page.on("download", lambda d: downloads.append(d))
+
+            def _capture(response) -> None:
+                try:
+                    if response.url == url and response.ok:  # 200–299
+                        good.append(response)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            page.on("response", _capture)
             try:
                 host = urlparse(url).hostname or ""
-                # Solve the challenge once per host, on the origin root; the
-                # cf_clearance then lives in the shared context for later fetches.
+                # Warm up the host: solve the challenge on the origin root once so
+                # the context holds an initial cf_clearance.
                 if host not in self._cleared_hosts:
                     page.goto(origin, wait_until="load", timeout=self.nav_timeout_ms)
-                    deadline = time.time() + self.solve_timeout_sec
-                    while time.time() < deadline:
-                        if any(c["name"] == "cf_clearance" for c in self._context.cookies()):
-                            break
-                        page.wait_for_timeout(500)
+                    self._wait_for_clearance(page)
                     self._cleared_hosts.add(host)
 
-                # Navigating to a file the server marks as an attachment makes
-                # Chromium download it instead of rendering — goto then raises
-                # "Download is starting" / ERR_ABORTED, and the bytes arrive via
-                # a download event instead.  Handle both.
+                # Navigate to the target.  It may return the real content, a
+                # "Just a moment…" interstitial (403), or trigger a download
+                # (goto then raises "Download is starting" / ERR_ABORTED).
                 resp = None
                 try:
                     resp = page.goto(url, wait_until="load", timeout=self.nav_timeout_ms)
                 except Exception as nav_exc:  # noqa: BLE001
-                    msg = str(nav_exc)
-                    if "Download is starting" not in msg and "ERR_ABORTED" not in msg:
+                    if not _is_download_error(str(nav_exc)):
                         raise
 
-                if resp is not None:
-                    content = resp.body()
+                # If we didn't already get good content, wait for the interstitial
+                # to auto-solve — the real response or a download will appear.
+                if not good and not downloads and (resp is None or not resp.ok):
+                    deadline = time.time() + self.solve_timeout_sec
+                    while time.time() < deadline and not good and not downloads:
+                        page.wait_for_timeout(500)
+
+                if good:
+                    r = good[-1]
                     try:
-                        text = resp.text()
-                    except Exception:  # noqa: BLE001
-                        text = content.decode("utf-8", "replace")
-                    if resp.status >= 400:
-                        # Log the block-page title so we can tell a solvable
-                        # challenge ("Just a moment…") from a hard IP/WAF block
-                        # ("Sorry, you have been blocked" / "Attention Required").
-                        try:
-                            page_title = page.title()
-                        except Exception:  # noqa: BLE001
-                            page_title = ""
-                        log.info(
-                            "browser-fetch blocked: %s -> HTTP %d, title=%r (%d bytes)",
-                            url, resp.status, page_title[:120], len(content),
-                        )
-                    else:
+                        content = r.body()
+                    except Exception:  # noqa: BLE001 — body may be a download
+                        content = None
+                    if content is not None:
                         log.info(
                             "browser-fetched %s (HTTP %d, %d bytes)",
-                            url, resp.status, len(content),
+                            url, r.status, len(content),
                         )
-                    return BrowserResult(resp.status, content, text)
+                        return BrowserResult(r.status, content, _safe_text(r, content))
 
-                # Download path: wait for the file, then read its bytes.
-                deadline = time.time() + 20
-                while not downloads and time.time() < deadline:
-                    page.wait_for_timeout(200)
                 if downloads:
                     data = Path(downloads[0].path()).read_bytes()
                     log.info("browser-downloaded %s (%d bytes)", url, len(data))
                     return BrowserResult(200, data, data.decode("utf-8", "replace"))
+
+                # Still blocked — log the page title so a hard block ("you have
+                # been blocked") is distinguishable from an unsolved challenge.
+                if resp is not None:
+                    content = resp.body()
+                    log.info(
+                        "browser-fetch blocked: %s -> HTTP %d, title=%r (%d bytes)",
+                        url, resp.status, _safe_title(page)[:120], len(content),
+                    )
+                    return BrowserResult(resp.status, content, _safe_text(resp, content))
                 return None
             finally:
                 page.close()
         except Exception as exc:  # noqa: BLE001 — best-effort fallback, never fatal
             log.warning("browser fetch failed for %s: %r", url, exc)
             return None
+
+    def _wait_for_clearance(self, page) -> None:
+        """Poll until a cf_clearance cookie appears or the solve timeout passes."""
+        deadline = time.time() + self.solve_timeout_sec
+        while time.time() < deadline:
+            if any(c["name"] == "cf_clearance" for c in self._context.cookies()):
+                return
+            page.wait_for_timeout(500)
 
     def close(self) -> None:
         for obj in (self._context, self._browser):
